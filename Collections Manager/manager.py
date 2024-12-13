@@ -5,6 +5,7 @@ from pathlib import Path
 import regex as re
 import requests
 from datetime import datetime, timedelta
+import math
 
 class OptionParser:
     """utility class to get the specifics from a given contract id"""
@@ -136,8 +137,27 @@ class Calculations():
     def __init__(self): 
         pass
 
-    def findGreeks(self.contract): 
-        pass 
+    def findGreeks(self.contractID): # these are european options, so we need to use the black/scholes formula
+        contractData = OptionParser.getFields(self.contractID, ['underlyingPrice', 'type', 'strike', 'expiration', 'impliedVol'])
+        expiry = datetime.strptime(contractData['expiration'], '%Y-%m-%d')
+        today = datetime.now()
+
+        daysToExpiry = (expiry-today).days
+        yearsToExpiry = daysToExpiry/252
+
+        sigma = float(contractData['implied_vol']/100) 
+        S = float(contractData['underlyingPrice'])
+        K = float(contractData['strike'])
+        r = 4.5
+
+        d1 = (math.log(S/K) + (r + ((sigma**2)/2)*yearsToExpiry))/(sigma * math.sqrt(yearsToExpiry))  # delta calculation
+        
+        if contractData['type'] == "call": 
+            return d1
+        else:
+            return (d1 - 1)
+
+
 
     def findPerformance(self.contract, self.timescale): 
         pass 
