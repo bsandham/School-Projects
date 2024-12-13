@@ -6,6 +6,64 @@ import regex as re
 import requests
 from datetime import datetime, timedelta
 
+class OptionParser:
+    """utility class to get the specifics from a given contract id"""
+    
+    @staticmethod
+    def parseContract(contractID: str, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """
+        find all specific fields re: any given contract then optionally merge with DataFrame data
+        """
+        pattern = r'([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)'
+        match = re.match(pattern, contractID)
+        
+        if not match:
+            raise ValueError(f"Contract ID Invalid. {contractID}")
+            
+        underlying, yy, mm, dd, opt_type, strike = match.groups()
+    
+        basicData = {
+            'underlying': underlying,
+            'expiry': f'20{yy}-{mm}-{dd}',
+            'type': 'call' if opt_type == 'C' else 'put',
+            'strike': float(strike) / 1000,  # Convert from padded format
+        }
+        
+        if df is not None:
+            contract_data = df[df['contractID'] == contractID]
+            if not contract_data.empty:
+                basicData.update({
+                    'bid': float(contract_data['bid'].iloc[0]),
+                    'ask': float(contract_data['ask'].iloc[0]),
+                    'volume': int(contract_data['volume'].iloc[0]),
+                    'impliedVol': int(contract_data['impliedVol'].iloc[0])
+                })
+        
+        return basicData
+    
+    @staticmethod
+    def getField(contractID: str, field: str, df: Optional[pd.DataFrame] = None) -> Union[str, float, int]:
+        """
+        Get a specific field from parsed contract details
+        
+        Args:
+            contractID: The option contract ID
+            field: Field to retrieve ('underlying', 'expiry', 'type', 'strike', 'bid', 'ask', 'volume', 'impliedVol')
+            df: Optional DataFrame with market data
+        
+        Returns:
+            The requested field value
+        """
+        basicData = OptionParser.parse_contract(contractID, df)
+        if field not in basicData:
+            raise ValueError(f"Field '{field}' not found. Available fields: {list(basicData.keys())}")
+        return basicData[field]
+    
+    @staticmethod
+    def getFields(contractID: str, fields: list, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        basicData = OptionParser.parse_contract(contractID, df)
+        return {field: basicData[field] for field in fields if field in basicData}
+
 class DataLoader:
     def __init__(self):
         self.csvFile = 'contracts.csv'
@@ -14,54 +72,23 @@ class DataLoader:
         
     def getDataFromCSV(self):
         self.df = pd.read_csv(self.csvFile, 
-                            names=['contract_id', 'description', 'underlying', 
-                                  'strike', 'expiry', 'bid', 'ask', 'volume'])
+                            names=['contractID', 'description', 'underlying', 
+                                  'strike', 'expiry', 'bid', 'ask', 'volume', 'impliedVol'])
         return self.df
-        
-    def getDataFromJSON(self):
-        self.df = pd.read_json(self.JSONFile)
-        return self.df
-        
-    def parseOptionDetails(self, contract_id):
+    
+    def parseOptionDetails(self, contractID: str, fields: Optional[list] = None):
         """
-        Parse option contract details from contract ID
-        Example: TSLA241213C00255000 -> 
-        {
-            'underlying': 'TSLA',
-            'expiry': '2024-12-13',
-            'type': 'call',
-            'strike': 255.00
-        }
+        Wrapper method to use OptionParser with the loaded DataFrame
         """
         if self.df is None:
             self.getDataFromCSV()
-        
-        contract_data = self.df[self.df['contract_id'] == contract_id]
-        
-        if contract_data.empty:
-            return None
-    
-        # Format: UNDERLYING + YY + MM + DD + C/P + STRIKE(padded)
-        pattern = r'([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)'
-        match = re.match(pattern, contract_id)
-        
-        if not match:
-            return None
             
-        underlying, yy, mm, dd, opt_type, strike = match.groups()
-        
-        return {
-            'underlying': underlying,
-            'expiry': f'20{yy}-{mm}-{dd}',
-            'type': 'call' if opt_type == 'C' else 'put',
-            'strike': float(strike) / 1000,  
-            'bid': float(contract_data['bid'].iloc[0]),
-            'ask': float(contract_data['ask'].iloc[0]),
-            'volume': int(contract_data['volume'].iloc[0])
-        }
+        if fields:
+            return OptionParser.get_fields(contractID, fields, self.df)
+        return OptionParser.parse_contract(contractID, self.df)
     
     def getNewsfeed(self, underlying):
-        api_key = 'f6ec5702-a492-4964-b4cb-e66cfa1d773b'
+        api_key = '' # prevent key being leaked for now pls replace
         days_back = 7
         max_articles = 1
         base_url = "https://api.webz.io/filterWebContent"
@@ -107,7 +134,7 @@ class DataLoader:
          
 class Calculations(): 
     def __init__(self): 
-        pass 
+        pass
 
     def findGreeks(self.contract): 
         pass 
