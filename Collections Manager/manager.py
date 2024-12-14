@@ -6,6 +6,8 @@ import regex as re
 import requests
 from datetime import datetime, timedelta
 import math
+import numpy as np
+from scipy.stats import norm
 
 class OptionParser:
     """utility class to get the specifics from a given contract id"""
@@ -26,7 +28,7 @@ class OptionParser:
         basicData = {
             'underlying': underlying,
             'expiry': f'20{yy}-{mm}-{dd}',
-            'type': 'call' if opt_type == 'C' else 'put',
+            'type': 'call' if opt_type == 'call' else 'put',
             'strike': float(strike) / 1000,  # Convert from padded format
         }
         
@@ -138,6 +140,14 @@ class Calculations():
         pass
 
     def findGreeks(self.contractID): # these are european options, so we need to use the black/scholes formula
+
+        greeksDict = {
+                'delta': None,
+                'gamma': None,
+                'vega': None,
+                'theta': None
+        }
+        
         contractData = OptionParser.getFields(self.contractID, ['underlyingPrice', 'type', 'strike', 'expiration', 'impliedVol'])
         expiry = datetime.strptime(contractData['expiration'], '%Y-%m-%d')
         today = datetime.now()
@@ -150,19 +160,32 @@ class Calculations():
         K = float(contractData['strike'])
         r = 4.5
 
-        d1 = (math.log(S/K) + (r + ((sigma**2)/2)*yearsToExpiry))/(sigma * math.sqrt(yearsToExpiry))  # delta calculation
+        d1 = (math.log(S/K) + (r + ((sigma**2) * 0.5)*yearsToExpiry))/(sigma * math.sqrt(yearsToExpiry))  # delta calculation
+        d2 = d1 - sigma * np.sqrt(yearsToExpiry)
         
         if contractData['type'] == "call": 
-            return d1
+            greeksDict['delta'] = d1
         else:
-            return (d1 - 1)
+            greeksDict['delta'] = d1
+        
+        gamma = norm.pdf(d1) / (S * sigma * np.sqrt(yearsToExpiry)) # gamma calculation, based on delta
 
+        greeksDict['gamma'] = gamma
 
+        vega = S * np.sqrt(yearsToExpiry) * norm.pdf(d1) # vega calculation, based on delta
+
+        greeksDict['vega'] = vega/100
+
+        if contractData['type'] == 'call':
+            theta = (-(S * sigma * norm.pdf(d1)) / (2 * np.sqrt(yearsToExpiry))) - r * K * np.exp(-r * yearsToExpiry) * norm.cdf(d2)
+        else:  # put
+            theta = (-(S * sigma * norm.pdf(d1)) / (2 * np.sqrt(yearsToExpiry))) + r * K * np.exp(-r * yearsToExpiry) * norm.cdf(-d2)
+
+        greeksDict['theta'] = theta 
+
+        return greeksDict
 
     def findPerformance(self.contract, self.timescale): 
-        pass 
-
-    def findIV(self.contract): 
         pass 
 
     def findNotionalRisk(self.contract): 
