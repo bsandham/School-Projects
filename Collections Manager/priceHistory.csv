@@ -1,0 +1,5 @@
+contractID, priceDate, historicalPrice
+SPY241213C00607000, 2024-12-15, 10
+
+
+## need to fill min 7 historicalPrices for each option contract in contracts

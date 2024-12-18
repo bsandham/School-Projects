@@ -139,7 +139,7 @@ class Calculations():
     def __init__(self): 
         pass
 
-    def findGreeks(self.contractID): # these are european options, so we need to use the black/scholes formula
+    def findGreeks(self.contractID): # these are european options, so we need to use the black/scholes formula 
 
         greeksDict = {
                 'delta': None,
@@ -166,7 +166,7 @@ class Calculations():
         if contractData['type'] == "call": 
             greeksDict['delta'] = d1
         else:
-            greeksDict['delta'] = d1
+            greeksDict['delta'] = d1 - 1 
         
         gamma = norm.pdf(d1) / (S * sigma * np.sqrt(yearsToExpiry)) # gamma calculation, based on delta
 
@@ -185,28 +185,99 @@ class Calculations():
 
         return greeksDict
 
-    def findPerformance(self.contract, self.timescale): 
-        pass 
+    def findPerformance(self.contractID, self.timescale):
+        priceHistoryDF = pd.read_csv('priceHistory.csv')
+        priceHistoryDF['priceHistory'] = pd.to_datetime(priceHistoryDF['priceDate'], format='%d/%m/%y')
 
-    def findNotionalRisk(self.contract): 
-        pass
+        contractData = priceHistoryDF[priceHistoryDF['contractID'] == self.contractID].copy()
+
+        if contractData.empty:
+            raise ValueError("No data for contract")
+        
+        contractData = contractData.sort_values('priceDate')
+
+        endDate = contractData['priceDate'].max()
+
+        startDate = endDate - timedelta(days=self.timescale)
+
+        startPrice = contractData[contractData['priceDate'] >= startDate].iloc[0]['historicalPrice']
+        endPrice = contractData[contractData['priceDate'] == endDate].iloc[0]['historicalPrice']
+
+        percentChange = ((endPrice - startPrice) / startPrice) * 100
+
+        return percentChange
+
+    def findNotionalRisk(self.contractID): 
+        """ 
+        notional risk = delta x underlyingPrice x 100 (1 option represents 100 of the underlying asset)
+        """
+        greeksDict = self.findGreeks(self.contractID)
+        delta = greeksDict['delta']
+
+        underlyingPrice = OptionParser.getField(self.contractID, 'underlyingPrice')
+
+        notionalRisk = (delta * underlyingPrice * 100)
+
+        return notionalRisk
 
 class DFManipulation():
     def __init__(self): 
-        pass
+        self.filterTag = None   # BOOL TRUE/FALSE
 
-    def updateDF(self.dF):
-        pass 
+    def filterDFbyPrice(self.dF, filter=self.filterTag): 
+        return self.df.sort_values('price', filter)
 
-    def filterDF(self.dF, filter='ascending'): 
-        pass 
-
-class Viualisations():
+    def filterDFbyIV(self.df, filter=self.filterTag): 
+        return self.df.sort_values('impliedVol', filter)
+    
+    def filterDFbyName(self.df, filter=self.filterTag): 
+        return self.df.sort_values('name', ascending=self.filterTag)
+        
+class Visualisations():
     def __init__(self): 
         pass 
 
-    def modelVolSurface(self.contract): 
-        pass 
+    def modelVolSurface(self.name): 
+        allContracts = pd.read_csv('contracts.csv')
+        allContractsFromUnderlying = allContracts[allContracts['name'] == self.name]
+
+        def getSurfaceDataToNP(df, fields):
+            surfaceData = {
+                'strikes': [],
+                'expiries': [],
+                'ivs': [],
+                'underlyingPrice': None
+            }
+
+            for i, row in df.iterrows():
+                contractData = OptionParser.getFields(row['contractID'], fields, df)
+
+                surfaceData['strikes'].append(contractData.get('strike'))
+
+                expiryDates = contractData.get('expiry')
+                expiry = datetime.strptime(expiryDates, '%Y-%m-%d')
+                today = datetime.now()
+                dte = (expiry - today).days
+
+                surfaceData['expiries'].append(dte/365)
+
+
+                surfaceData['ivs'].append(contractData.get('impliedVol'))
+
+                if surfaceData['underlyingPrice'] is None: 
+                    surfaceData['underlyingPrice'] = contractData.get('underlyingPrice')
+
+            surfaceData['strikes'] = np.array(surfaceData['strikes'])
+            surfaceData['expiries'] = np.array(surfaceData['expiries'])
+            surfaceData['ivs'] = np.array(surfaceData['ivs'])
+
+            surfaceData['moneyness'] = surfaceData['strikes'] / surfaceData['price']
+
+            return surfaceData
+        
+        fields = ['strike', 'expiry', 'impliedVol', 'underlyingPrice']
+        surfaceData = getSurfaceDataToNP(allContractsFromUnderlying, fields)
+        
 
     def modelPerformanceOverTime(self.contract): 
         pass 
