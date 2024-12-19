@@ -12,20 +12,20 @@ from scipy.stats import norm
 import matplotlib as plt
 
 class OptionParser:
-    """utility class to get the specifics from a given contract id"""
+    """class to get the specifics from a given contract id -- added post design, realised that this was a more effective way to handle the data gathering"""
     
     @staticmethod
     def parseContract(contractID: str, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """
-        find all specific fields re: any given contract then optionally merge with DataFrame data
+        method to find all specific fields re: any given contract. optionally merge with DataFrame data
         """
-        pattern = r'([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)'
+        pattern = r'([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d+)' # regex pattern to match contract ID
         match = re.match(pattern, contractID)
         
         if not match:
             raise ValueError(f"Contract ID Invalid. {contractID}")
             
-        underlying, yy, mm, dd, optType, strike = match.groups()
+        underlying, yy, mm, dd, optType, strike = match.groups() # grab the name of the underlying, expiry date (split), the type of option, and the strike price from the csv
     
         basicData = {
             'underlying': underlying,
@@ -47,9 +47,9 @@ class OptionParser:
         return basicData
     
     @staticmethod
-    def getField(contractID: str, field: str, df: Optional[pd.DataFrame] = None) -> Union[str, float, int]:
+    def getField(contractID: str, field: str, df: Optional[pd.DataFrame] = None) -> Union[str, float, int]: # method to get a specific field from the contract details, taking contractID and the field name as inputs
         """
-        Get a specific field from parsed contract details
+        get a single field for a given contract. args: contractID (str), field (str) e.g NVDA22311, 'strike' to get the strike for that contract
         """
         basicData = OptionParser.parseContract(contractID, df)
         if field not in basicData:
@@ -57,7 +57,11 @@ class OptionParser:
         return basicData[field]
     
     @staticmethod
-    def getFields(contractID: str, fields: list, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    def getFields(contractID: str, fields: list, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]: # extension of getField, just allows for a list to be taken as a param allowing for more than one field to be pulled
+        """
+        get multiple fields for a given contract. args: contractID (str), fields (list) e.g NVDA22311, ['strike', 'expiry'] to get the strike and expiry for that contract
+        """
+        
         basicData = OptionParser.parseContract(contractID, df)
         return {field: basicData[field] for field in fields if field in basicData}
 
@@ -68,14 +72,17 @@ class DataLoader:
         self.df = None
         
     def getDataFromCSV(self):
+        """
+        method to get the data from the csv file and store it in a dataframe.
+        """
         self.df = pd.read_csv(self.csvFile, 
                             names=['contractID', 'description', 'underlying', 
-                                  'strike', 'expiry', 'bid', 'ask', 'volume', 'impliedVol'])
+                                  'strike', 'expiry', 'bid', 'ask', 'volume', 'impliedVol']) # read csv and store the data in a dataframe - uses the pd.read_csv method which makes life easier
         return self.df
     
     def parseOptionDetails(self, contractID: str, fields: Optional[list] = None):
         """
-        Wrapper method to use OptionParser with the loaded DataFrame
+        wrapper method to use OptionParser with the df. args: contractID (str), [OPTIONAL] fields (list) 
         """
         if self.df is None:
             self.getDataFromCSV()
@@ -85,6 +92,10 @@ class DataLoader:
         return OptionParser.parseContract(contractID, self.df)
     
     def getNewsfeed(self, underlying: str) -> list:
+        """
+        method to get the newsfeed for a given underlying asset. args: underlying (str) e.g 'AAPL', returns latest related news articles from the last 7 days
+        """
+
         apiKey = '' # prevent key being leaked for now pls replace
         daysBack = 7
         maxArticles = 1
@@ -129,7 +140,13 @@ class DataLoader:
             return []
 
 class Calculations:
+    """
+    class to handle the calculations for the options contracts. the methods query the data themselves and return the calculated values, displayed in dict or float format
+    """
     def findGreeks(self, contractID: str) -> Dict[str, float]:
+        """
+        method to return delta, gamma, vega and theta in dictionary format for a given contract. queries csv and accesses only the necessary data for each contract
+        """
         greeksDict = {
             'delta': None,
             'gamma': None,
@@ -172,6 +189,10 @@ class Calculations:
         return greeksDict
 
     def findPerformance(self, contractID: str, timescale: int) -> float:
+        """
+        method to return the percentage change in the contracts value for a given contract and time period. 
+        args: contractID (str), timescale (int) e.g 'NVDA22311', 30 to get the percentage change in the last 30 days
+        """
         priceHistoryDF = pd.read_csv('priceHistory.csv')
         priceHistoryDF['priceDate'] = pd.to_datetime(priceHistoryDF['priceDate'], format='%y-%m-%d')
 
@@ -202,6 +223,9 @@ class Calculations:
         return notionalRisk
 
 class DFManipulation:
+    """
+    class to handle general dataframe manipulation tasks. methods to filter, sort and export dataframes. useful for when this data is displayed in the frontend.
+    """
     def __init__(self): 
         self.filterTag = None   # BOOL TRUE/FALSE
 
@@ -217,8 +241,15 @@ class DFManipulation:
         filterToUse = filterTag if filterTag is not None else self.filterTag
         return df.sort_values('name', ascending=filterToUse)
 
-class Visualizations:
+class Visualisations:
+    """
+    class to handle any visualisation tasks that are required. both return a matplotlib plot and display it in the frontend when called. 
+    """
     def modelVolSurface(self, name: str) -> None:
+        """
+        method to generate a volatility surface model. args: name (str) e.g 'AAPL' to get the volatility surface. 
+        as vol surfaces utilise a set of option contracts rather than being specific to just one, this is calculated based on the name of the underlying asset.
+        """
         allContracts = pd.read_csv('contracts.csv')
         allContractsFromUnderlying = allContracts[allContracts['name'] == name]
 
@@ -279,6 +310,9 @@ class Visualizations:
         plt.show()
 
     def modelPerformanceOverTime(self, contractID: str) -> pd.DataFrame:
+        """
+        timescale manipulation currently not availible, you just get the full history of the contract.
+        """
         priceHistoryDF = pd.read_csv('priceHistory.csv')
         priceHistoryDF['priceDate'] = pd.to_datetime(priceHistoryDF['priceDate'], format='%y-%m-%d')
 
